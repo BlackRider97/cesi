@@ -1,5 +1,5 @@
 from flask import Flask, render_template, url_for, redirect, jsonify, request, g, session, flash
-from cesi import Config, Connection, Node, CONFIG_FILE, ProcessInfo, JsonValue
+from cesi import Config, Connection, Node, ProcessInfo, JsonValue
 from datetime import datetime
 import cesi 
 import xmlrpclib
@@ -12,10 +12,12 @@ app = Flask(__name__)
 app.config.from_object(__name__)
 app.secret_key= '42'
 
-DATABASE = Config(CONFIG_FILE).getDatabase()
-ACTIVITY_LOG = Config(CONFIG_FILE).getActivityLog()
-HOST = Config(CONFIG_FILE).getHost()
-PORT = Config(CONFIG_FILE).getPort()
+myconfig = Config()
+ 
+DATABASE = myconfig.getDatabase()
+ACTIVITY_LOG = myconfig.getActivityLog()
+HOST = myconfig.getHost()
+PORT = myconfig.getPort()
 
 # Database connection
 def get_db():
@@ -23,6 +25,10 @@ def get_db():
     if db is None:
         db = g._database = sqlite3.connect(DATABASE)
     return db
+
+def write_into_activity_log(log_line):
+    add_log = open(ACTIVITY_LOG, "a")
+    add_log.write("%s - %s\n"%( datetime.now().ctime(), log_line))
 
 # Close database connection
 @app.teardown_appcontext
@@ -68,11 +74,9 @@ def control():
         password = request.form['password']
         cur = get_db().cursor()
         cur.execute("select * from userinfo where username=?",(username,))
-#if query returns an empty list
+        #if query returns an empty list
         if not cur.fetchall():
             session.clear()
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - Login fail. Username is not avaible.\n"%( datetime.now().ctime() ))
             return jsonify(status = "warning",
                            message = "Username is not  avaible ")
         else:
@@ -82,13 +86,9 @@ def control():
                 session['logged_in'] = True
                 cur.execute("select * from userinfo where username=?",(username,))
                 session['usertype'] = cur.fetchall()[0][2]
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - %s logged in.\n"%( datetime.now().ctime(), session['username'] ))
                 return jsonify(status = "success")
             else:
                 session.clear()
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - Login fail. Invalid password.\n"%( datetime.now().ctime() ))
                 return jsonify(status = "warning",
                                message = "Invalid password")
 
@@ -100,25 +100,28 @@ def login():
 # Logout action
 @app.route('/logout', methods = ['GET', 'POST'])
 def logout():
-    add_log = open(ACTIVITY_LOG, "a")
-    add_log.write("%s - %s logged out.\n"%( datetime.now().ctime(), session['username'] ))
     session.clear()
     return redirect(url_for('login'))
 
+
+def get_user_type(session):
+    user_type_code, usertype  = session['usertype'], "Read Only"
+    if user_type_code==0:
+        usertype = "Admin"
+    elif user_type_code==1:
+        usertype = "Standart User"
+    elif user_type_code==2:
+        usertype = "Only Log"
+    elif user_type_code==3:
+        usertype = "Read Only"
+    return user_type_code, usertype
+    
 # Dashboard
 @app.route('/')
 def showMain():
 # get user type
     if session.get('logged_in'):
-        if session['usertype']==0:
-            usertype = "Admin"
-        elif session['usertype']==1:
-            usertype = "Standart User"
-        elif session['usertype']==2:
-            usertype = "Only Log"
-        elif session['usertype']==3:
-            usertype = "Read Only"
- 
+        user_type_code, usertype = get_user_type(session)
         all_process_count = 0
         running_process_count = 0
         stopped_process_count = 0
@@ -131,22 +134,22 @@ def showMain():
         not_connected_node_list = []
         connected_node_list = []
 
-        node_name_list = Config(CONFIG_FILE).node_list
+        node_name_list = myconfig.node_list
         node_count = len(node_name_list)
-        environment_name_list = Config(CONFIG_FILE).environment_list
+        environment_name_list = myconfig.environment_list
         
 
         for nodename in node_name_list:
-            nodeconfig = Config(CONFIG_FILE).getNodeConfig(nodename)
+            nodeconfig = myconfig.getNodeConfig(nodename)
 
             try:
                 node = Node(nodeconfig)
                 if not nodename in connected_node_list:
                     connected_node_list.append(nodename);
             except Exception as err:
-                 if not nodename in not_connected_node_list:
+                if not nodename in not_connected_node_list:
                     not_connected_node_list.append(nodename);
-                 continue
+                continue
 
             for name in node.process_dict2.keys():
                 p_group = name.split(':')[0]
@@ -159,12 +162,13 @@ def showMain():
                 all_process_count = all_process_count + 1
                 if process.state==20:
                     running_process_count = running_process_count + 1
-                if process.state==0:
+                elif process.state==0:
                     stopped_process_count = stopped_process_count + 1
+                
 
         # get environment list 
         for env_name in environment_name_list:
-            env_members = Config(CONFIG_FILE).getMemberNames(env_name)
+            env_members = myconfig.getMemberNames(env_name)
             for index, node in enumerate(env_members):
                 if not node in connected_node_list:
                     env_members.pop(index);
@@ -174,7 +178,7 @@ def showMain():
         for g_name in group_list:
             tmp= []
             for nodename in connected_node_list:
-                nodeconfig = Config(CONFIG_FILE).getNodeConfig(nodename)
+                nodeconfig = myconfig.getNodeConfig(nodename)
                 node = Node(nodeconfig)
                 for name in node.process_dict2.keys():
                     group_name = name.split(':')[0]
@@ -187,7 +191,7 @@ def showMain():
             tmp = []
             for name in sublist:
                 for env_name in environment_name_list:
-                    if name in Config(CONFIG_FILE).getMemberNames(env_name):
+                    if name in myconfig.getMemberNames(env_name):
                         if name in connected_node_list:
                             if not env_name in tmp:
                                 tmp.append(env_name)
@@ -212,7 +216,7 @@ def showMain():
                                 not_connected_node_list = not_connected_node_list,
                                 username = session['username'],
                                 usertype = usertype,
-                                usertypecode = session['usertype'])
+                                usertypecode = user_type_code)
     else:   
         return redirect(url_for('login'))
 
@@ -221,22 +225,18 @@ def showMain():
 @app.route('/node/<node_name>')
 def showNode(node_name):
     if session.get('logged_in'):
-        node_config = Config(CONFIG_FILE).getNodeConfig(node_name)
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - %s viewed node %s .\n"%( datetime.now().ctime(), session['username'], node_name ))
+        node_config = myconfig.getNodeConfig(node_name)
         return jsonify( process_info = Node(node_config).process_dict) 
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for view node %s .\n"%( datetime.now().ctime(), node_name ))
         return redirect(url_for('login'))
 
 @app.route('/group/<group_name>/environment/<environment_name>')
 def showGroup(group_name, environment_name):
     if session.get('logged_in'):
-        env_memberlist = Config(CONFIG_FILE).getMemberNames(environment_name)
+        env_memberlist = myconfig.getMemberNames(environment_name)
         process_list = []
         for nodename in env_memberlist:
-            node_config = Config(CONFIG_FILE).getNodeConfig(nodename)
+            node_config = myconfig.getNodeConfig(nodename)
             try:
                 node = Node(node_config)
             except Exception as err:
@@ -262,7 +262,7 @@ def json_restart(node_name, process_name):
     if session.get('logged_in'):
         if session['usertype'] == 0 or session['usertype'] == 1:
             try:
-                node_config = Config(CONFIG_FILE).getNodeConfig(node_name)
+                node_config = myconfig.getNodeConfig(node_name)
                 node = Node(node_config)
                 if node.connection.supervisor.stopProcess(process_name):
                     if node.connection.supervisor.startProcess(process_name):
@@ -289,7 +289,7 @@ def json_start(node_name, process_name):
     if session.get('logged_in'):
         if session['usertype'] == 0 or session['usertype'] == 1:
             try:
-                node_config = Config(CONFIG_FILE).getNodeConfig(node_name)
+                node_config = myconfig.getNodeConfig(node_name)
                 node = Node(node_config)
                 if node.connection.supervisor.startProcess(process_name):
                     add_log = open(ACTIVITY_LOG, "a")
@@ -315,7 +315,7 @@ def json_stop(node_name, process_name):
     if session.get('logged_in'):
         if session['usertype'] == 0 or session['usertype'] == 1:
             try:
-                node_config = Config(CONFIG_FILE).getNodeConfig(node_name)
+                node_config = myconfig.getNodeConfig(node_name)
                 node = Node(node_config)
                 if node.connection.supervisor.stopProcess(process_name):
                     add_log = open(ACTIVITY_LOG, "a")
@@ -339,7 +339,7 @@ def json_stop(node_name, process_name):
 @app.route('/node/name/list')
 def getlist():
     if session.get('logged_in'):
-        node_name_list = Config(CONFIG_FILE).node_list
+        node_name_list = myconfig.node_list
         return jsonify( node_name_list = node_name_list )
     else:
         return redirect(url_for('login'))
@@ -349,7 +349,7 @@ def getlist():
 def readlog(node_name, process_name):
     if session.get('logged_in'):
         if session['usertype'] == 0 or session['usertype'] == 1 or session['usertype'] == 2:
-            node_config = Config(CONFIG_FILE).getNodeConfig(node_name)
+            node_config = myconfig.getNodeConfig(node_name)
             node = Node(node_config)
             log = node.connection.supervisor.tailProcessStdoutLog(process_name, 0, 500)[0]
             add_log = open(ACTIVITY_LOG, "a")

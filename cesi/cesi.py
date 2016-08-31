@@ -4,9 +4,10 @@ from datetime import datetime, timedelta
 from flask import jsonify
 
 CONFIG_FILE = "/etc/cesi.conf"
+
 class Config:
     
-    def __init__(self, CFILE):
+    def __init__(self, CFILE=CONFIG_FILE):
         self.CFILE = CFILE
         self.cfg = ConfigParser.ConfigParser()
         self.cfg.read(self.CFILE)
@@ -29,11 +30,12 @@ class Config:
         
     def getNodeConfig(self, node_name):
         self.node_name = "node:%s" % (node_name)
+        self.environment = self.cfg.get(self.node_name, 'environment')
         self.username = self.cfg.get(self.node_name, 'username')
         self.password = self.cfg.get(self.node_name, 'password')
         self.host = self.cfg.get(self.node_name, 'host')
         self.port = self.cfg.get(self.node_name, 'port')
-        self.node_config = NodeConfig(self.node_name, self.host, self.port, self.username, self.password)
+        self.node_config = NodeConfig(self.node_name, self.host, self.port, self.username, self.password, self.environment)
         return self.node_config
 
     def getMemberNames(self, environment_name):
@@ -48,20 +50,23 @@ class Config:
     def getActivityLog(self):
         return str(self.cfg.get('cesi', 'activity_log'))
 
-    def getHost(self):
-        return str(self.cfg.get('cesi', 'host'))
+    def getHost(self, default = "0.0.0.0"):
+        host =  str(self.cfg.get('cesi', 'host'))
+        return default if not host else host
 
-    def getPort(self):
-        return str(self.cfg.get('cesi', 'port'))
+    def getPort(self, default = 9002):
+        port = str(self.cfg.get('cesi', 'port'))
+        return default if not port else port
 
 class NodeConfig:
 
-    def __init__(self, node_name, host, port, username, password):
+    def __init__(self, node_name, host, port, username, password, environment):
         self.node_name = node_name
         self.host = host
         self.port = port
         self.username = username
         self.password = password
+        self.environment = environment
             
 
 class Node:
@@ -72,11 +77,11 @@ class Node:
         self.connection = Connection(node_config.host, node_config.port, node_config.username, node_config.password).getConnection()
         self.process_list=[]
         self.process_dict2={}
-        for p in self.connection.supervisor.getAllProcessInfo():
-            self.process_list.append(ProcessInfo(p))
-            self.process_dict2[p['group']+':'+p['name']] = ProcessInfo(p)
         self.process_dict = self.connection.supervisor.getAllProcessInfo()
-
+        for p in self.process_dict:
+            process_info = ProcessInfo(p)
+            self.process_list.append(process_info)
+            self.process_dict2[p['group']+':'+p['name']] = process_info
 
 class Connection:
 
@@ -119,7 +124,7 @@ class JsonValue:
         self.process_name = process_name
         self.event = event
         self.node_name = node_name
-        self.node_config = Config(CONFIG_FILE).getNodeConfig(self.node_name)
+        self.node_config = Config().getNodeConfig(self.node_name)
         self.node = Node(self.node_config)
 
     def success(self):
@@ -138,4 +143,3 @@ class JsonValue:
                        nodename = self.node_name,
                        payload = self.payload)
  
-
