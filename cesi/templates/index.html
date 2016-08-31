@@ -152,6 +152,23 @@
                                 <div class="small-box bg-teal">
                                     <div class="inner">
                                         <h3>Environment</h3>
+                                        {%  for key, value in environment_states.iteritems()  %}
+	       						 			<h4> {{key}}</h4>
+	       						 			{% for team in value %}
+	       						 			 	{% for key2, value2 in team.iteritems() %}
+	       						 			 		{% if key2 == "team" %}
+	       						 			 			<h4>{{value2}} </h4>
+	       						 			 		{% endif %}
+    										 	{% endfor %}
+    										 	<h5> 
+	       						 			 	{% for key2, value2 in team.iteritems() %}
+	       						 			 		{% if key2 != "team" %}
+	       						 			 			{{key2}} - {{value2}}
+	       						 			 		{% endif %}
+    										 	{% endfor %}
+    										  	</h5>
+    										{% endfor %}  
+	       						 		{% endfor %}
                                         <h4> Node Count </h4>
                                         <h3>{{node_count}}</h3>
                                         <h4>Process Count</h4>
@@ -164,12 +181,9 @@
                                 <div class="small-box bg-blue">
                                     <div class="inner">
                                         <h3>Nodes</h3>
-                                        <h4> Node Count </h4>
-                                        <h3>{{node_count}}</h3>
-                                        <h4>Connected</h4>
-                                        <h3>{{connected_count}}</h3>
-                                        <h4>Not Connected</h4>
-                                        <h3>{{not_connected_count}}</h3<br/>
+                                        <h4> Node Count </h4> - <h3>{{node_count}}</h3>
+                                        <h4>Connected</h4> - <h3>{{connected_count}}</h3>
+                                        <h4>Not Connected</h4> - <h3>{{not_connected_count}}</h3<br/>
                                     </div>
                                 </div>
                             </div><!-- ./col -->
@@ -177,8 +191,9 @@
                                 <!-- small box -->
                                 <div class="small-box bg-navy">
                                     <div class="inner">
+                                    <h3>Processes</h3>
                                     {%  for key, value in process_states.iteritems()  %}
-	       						 		<h5> {{key}} - {{value}} </h5>
+	       						 		<h4> {{key}} - {{value}} </h4>
 	       						 	{% endfor %}
                                     </div>
                                 </div>
