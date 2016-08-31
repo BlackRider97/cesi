@@ -12,11 +12,13 @@ class Config:
         self.cfg = ConfigParser.ConfigParser()
         self.cfg.read(self.CFILE)
 
+        # list of all unique node's name
         self.node_list = []
         for name in self.cfg.sections():
             if name[:4] == 'node':
                 self.node_list.append(name[5:])
 
+        #map of all node's based on enviroment
         self.environment_list = []
         for name in self.cfg.sections():
             if name[:11] == 'environment':

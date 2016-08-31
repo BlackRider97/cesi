@@ -177,13 +177,11 @@
                                 <!-- small box -->
                                 <div class="small-box bg-navy">
                                     <div class="inner">
-                                        <h3>Process</h3>
-                                        <h4> Process Count </h4>
-                                        <h3>{{all_process_count}}</h3>
-                                        <h4>Running</h4>
-                                        <h3>{{running_process_count}}</h3>
-                                        <h4>Stopped</h4>
-                                        <h3>{{stopped_process_count}}</h3>
+                                    {%  for key, value in process_states.iteritems()  %}
+	       						 		{% if loop.index % 4 == 0 %}
+	       						 		<h4>{{key}} - {{value}}</h4>
+	       						 		{% endif %}
+	       						 	{% endfor %}
                                     </div>
                                 </div>
                             </div><!-- ./col -->

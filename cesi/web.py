@@ -26,9 +26,10 @@ def get_db():
         db = g._database = sqlite3.connect(DATABASE)
     return db
 
+# write into activity log file in append only mode
 def write_into_activity_log(log_line):
-    add_log = open(ACTIVITY_LOG, "a")
-    add_log.write("%s - %s\n"%( datetime.now().ctime(), log_line))
+    with open(ACTIVITY_LOG, "a") as add_log:
+        add_log.write("%s - %s\n"%( datetime.now().ctime(), log_line))
 
 # Close database connection
 @app.teardown_appcontext
@@ -63,8 +64,6 @@ def getlogtail():
             return jsonify(status="error",
                            message = "Activity log file is empty")
             
-
-
 
 # Username and password control
 @app.route('/login/control', methods = ['GET', 'POST'])
@@ -103,7 +102,6 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-
 def get_user_type(session):
     user_type_code, usertype  = session['usertype'], "Read Only"
     if user_type_code==0:
@@ -130,33 +128,30 @@ def showMain():
         g_node_list = []
         g_process_list = []
         g_environment_list = []
-        group_list = []
+        group_list = set()
         not_connected_node_list = []
         connected_node_list = []
 
-        node_name_list = myconfig.node_list
-        node_count = len(node_name_list)
         environment_name_list = myconfig.environment_list
         
-
+        node_name_list = myconfig.node_list
+        node_count = len(node_name_list)
+        
         for nodename in node_name_list:
             nodeconfig = myconfig.getNodeConfig(nodename)
-
             try:
                 node = Node(nodeconfig)
                 if not nodename in connected_node_list:
-                    connected_node_list.append(nodename);
+                    connected_node_list.append(nodename)
+                
             except Exception as err:
                 if not nodename in not_connected_node_list:
-                    not_connected_node_list.append(nodename);
+                    not_connected_node_list.append(nodename)
                 continue
 
             for name in node.process_dict2.keys():
                 p_group = name.split(':')[0]
-                p_name = name.split(':')[1]
-                if p_group != p_name:
-                    if not p_group in group_list:
-                        group_list.append(p_group)
+                group_list.add(p_group)
 
             for process in node.process_list:
                 all_process_count = all_process_count + 1
@@ -201,6 +196,7 @@ def showMain():
         not_connected_count = len(not_connected_node_list)
 
         return render_template('index.html',
+                                process_states = dict(Total="10", Running="1", Total="10", Running="1", Total="10", Running="1"),
                                 all_process_count =all_process_count,
                                 running_process_count =running_process_count,
                                 stopped_process_count =stopped_process_count,
@@ -210,7 +206,7 @@ def showMain():
                                 not_connected_count = not_connected_count,
                                 environment_list = environment_list,
                                 environment_name_list = environment_name_list,
-                                group_list = group_list,
+                                group_list = list(group_list),
                                 g_environment_list = g_environment_list,
                                 connected_node_list = connected_node_list,
                                 not_connected_node_list = not_connected_node_list,
@@ -266,21 +262,21 @@ def json_restart(node_name, process_name):
                 node = Node(node_config)
                 if node.connection.supervisor.stopProcess(process_name):
                     if node.connection.supervisor.startProcess(process_name):
-                        add_log = open(ACTIVITY_LOG, "a")
-                        add_log.write("%s - %s restarted %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+                        log_line = "%s restarted %s node's %s process" % (session['username'], node_name, process_name )
+                        write_into_activity_log(log_line)
                         return JsonValue(process_name, node_name, "restart").success()
             except xmlrpclib.Fault as err:
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - %s unsucces restart event %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+                log_line = "%s unsucces restart event %s node's %s process" % (session['username'], node_name, process_name )
+                write_into_activity_log(log_line)
                 return JsonValue(process_name, node_name, "restart").error(err.faultCode, err.faultString)
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s is unauthorized user request for restart. Restart event fail for %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+            log_line = "%s is unauthorized user request for restart. Restart event fail for %s node's %s process" % (session['username'], node_name, process_name )
+            write_into_activity_log(log_line)
             return jsonify(status = "error2",
                            message = "You are not authorized this action" )
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for restart to %s node's %s process %s .\n"%( datetime.now().ctime(), node_name, process_name ))
+        log_line = "Illegal request for restart to %s node's %s process %s" % ( node_name, process_name )
+        write_into_activity_log(log_line)
         return redirect(url_for('login'))
 
 # Process start
@@ -292,21 +288,21 @@ def json_start(node_name, process_name):
                 node_config = myconfig.getNodeConfig(node_name)
                 node = Node(node_config)
                 if node.connection.supervisor.startProcess(process_name):
-                    add_log = open(ACTIVITY_LOG, "a")
-                    add_log.write("%s - %s started %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+                    log_line = " %s started %s node's %s process" % (session['username'], node_name, process_name )
+                    write_into_activity_log(log_line)
                     return JsonValue(process_name, node_name, "start").success()
             except xmlrpclib.Fault as err:
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - %s unsucces start event %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+                log_line = "%s unsucces start event %s node's %s process" % (session['username'], node_name, process_name )
+                write_into_activity_log(log_line)
                 return JsonValue(process_name, node_name, "start").error(err.faultCode, err.faultString)
         else:   
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s is unauthorized user request for start. Start event fail for %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+            log_line = "%s is unauthorized user request for start. Start event fail for %s node's %s process" % (session['username'], node_name, process_name )
+            write_into_activity_log(log_line)
             return jsonify(status = "error2",
                            message = "You are not authorized this action" )
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for start to %s node's %s process %s .\n"%( datetime.now().ctime(), node_name, process_name ))
+        log_line = "Illegal request for start to %s node's %s process %s" % (node_name, process_name )
+        write_into_activity_log(log_line)
         return redirect(url_for('login'))
 
 # Process stop
@@ -318,21 +314,21 @@ def json_stop(node_name, process_name):
                 node_config = myconfig.getNodeConfig(node_name)
                 node = Node(node_config)
                 if node.connection.supervisor.stopProcess(process_name):
-                    add_log = open(ACTIVITY_LOG, "a")
-                    add_log.write("%s - %s stopped %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+                    log_line = "%s stopped %s node's %s process" %(session['username'], node_name, process_name )
+                    write_into_activity_log(log_line)
                     return JsonValue(process_name, node_name, "stop").success()
             except xmlrpclib.Fault as err:
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - %s unsucces stop event %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+                log_line =  "%s unsucces stop event %s node's %s process" %(session['username'], node_name, process_name )
+                write_into_activity_log(log_line)
                 return JsonValue(process_name, node_name, "stop").error(err.faultCode, err.faultString)
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s is unauthorized user request for stop. Stop event fail for %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+            log_line =  "%s is unauthorized user request for stop. Stop event fail for %s node's %s process" % (session['username'], node_name, process_name )
+            write_into_activity_log(log_line)
             return jsonify(status = "error2",
                            message = "You are not authorized this action" )
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for stop to %s node's %s process %s .\n"%( datetime.now().ctime(), node_name, process_name ))
+        log_line = "Illegal request for stop to %s node's %s process %s" %(node_name, process_name )
+        write_into_activity_log(log_line)
         return redirect(url_for('login'))
 
 # Node name list in the configuration file
@@ -352,16 +348,16 @@ def readlog(node_name, process_name):
             node_config = myconfig.getNodeConfig(node_name)
             node = Node(node_config)
             log = node.connection.supervisor.tailProcessStdoutLog(process_name, 0, 500)[0]
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s read log %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+            log_line = "%s read log %s node's %s process" %(session['username'], node_name, process_name )
+            write_into_activity_log(log_line)
             return jsonify( status = "success", url="node/"+node_name+"/process/"+process_name+"/read" , log=log)
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s is unauthorized user request for read log. Read log event fail for %s node's %s process .\n"%( datetime.now().ctime(), session['username'], node_name, process_name ))
+            log_line = "%s is unauthorized user request for read log. Read log event fail for %s node's %s process" %(session['username'], node_name, process_name )
+            write_into_activity_log(log_line)
             return jsonify( status = "error", message= "You are not authorized for this action")
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for read log to %s node's %s process %s .\n"%( datetime.now().ctime(), node_name, process_name ))
+        log_line = "Illegal request for read log to %s node's %s process %s" %(node_name, process_name )
+        write_into_activity_log(log_line)
         return jsonify( status = "error", message= "First login please")
 
 # Add user method for only admin type user
@@ -371,10 +367,9 @@ def add_user():
         if session['usertype'] == 0:
             return jsonify(status = 'success')
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - Unauthorized user request for add user event. Add user event fail .\n"%( datetime.now().ctime() ))
+            log_line = "Unauthorized user request for add user event. Add user event fail"
+            write_into_activity_log(log_line)
             return jsonify(status = 'error')
-
 
 # Delete user method for only admin type user
 @app.route('/delete/user')
@@ -390,8 +385,8 @@ def del_user():
                            names = usernamelist,
                            types = usertypelist)
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - Unauthorized user request for delete user event. Delete user event fail .\n"%( datetime.now().ctime() ))
+            log_line = "Unauthorized user request for delete user event. Delete user event fail"
+            write_into_activity_log(log_line)
             return jsonify(status = 'error')
 
 @app.route('/delete/user/<username>')
@@ -402,22 +397,21 @@ def del_user_handler(username):
                 cur = get_db().cursor()
                 cur.execute("delete from userinfo where username=?",[username])
                 get_db().commit()
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - %s user deleted .\n"%( datetime.now().ctime(), username ))
+                log_line = "%s user deleted .\n" %(username )
+                write_into_activity_log(log_line)
                 return jsonify(status = "success")
             else:
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - %s  user request for delete admin user. Delete admin user event fail .\n"%( datetime.now().ctime(), session['username'] ))
+                log_line = "%s  user request for delete admin user. Delete admin user event fail" %(session['username'] )
+                write_into_activity_log(log_line)
                 return jsonify(status = "error",
                                message= "Admin can't delete")
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s is unauthorized user for request to delete a user. Delete event fail .\n"%( datetime.now().ctime(), session['username'] ))
+
+            log_line = "%s is unauthorized user for request to delete a user. Delete event fail" % (session['username'] )
+            write_into_activity_log(log_line)
             return jsonify(status = "error",
                            message = "Only Admin can delete a user")
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for delete user event.\n"%( datetime.now().ctime()))
         return redirect(url_for('login'))
 
 # Writes new user information to database
@@ -448,28 +442,28 @@ def adduserhandler():
                     if password == confirmpassword:
                         cur.execute("insert into userinfo values(?, ?, ?)", (username, password, usertype,))
                         get_db().commit()
-                        add_log = open(ACTIVITY_LOG, "a")
-                        add_log.write("%s - New user added.\n"%( datetime.now().ctime() ))
+                        log_line = "New user added"
+                        write_into_activity_log(log_line)
                         return jsonify(status = "success",
                                        message ="User added")
                     else:
-                        add_log = open(ACTIVITY_LOG, "a")
-                        add_log.write("%s - Passwords didn't match at add user event.\n"%( datetime.now().ctime() ))
+                        log_line = "Passwords didn't match at add user event"
+                        write_into_activity_log(log_line)
                         return jsonify(status = "warning",
                                        message ="Passwords didn't match")
                 else:
-                    add_log = open(ACTIVITY_LOG, "a")
-                    add_log.write("%s - Username is avaible at add user event.\n"%( datetime.now().ctime() ))
+                    log_line = "Username is avaible at add user event"
+                    write_into_activity_log(log_line)
                     return jsonify(status = "warning",
                                    message ="Username is avaible. Please select different username")
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s is unauthorized user for request to add user event. Add user event fail .\n"%( datetime.now().ctime(), session['username'] ))
+            log_line = "%s is unauthorized user for request to add user event. Add user event fail" % (session['username'] )
+            write_into_activity_log(log_line)
             return jsonify(status = "error",
                            message = "Only Admin can add a user")
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for add user event.\n"%( datetime.now().ctime()))
+        log_line = "Illegal request for add user event"
+        write_into_activity_log(log_line)
         return jsonify(status = "error",
                        message = "First login please")
 
@@ -481,15 +475,14 @@ def changepassword(username):
         if session['username'] == username:
             return jsonify(status = "success")
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s user request to change %s 's password. Change password event fail\n"%( datetime.now().ctime(), session['username'], username))
+            log_line = "%s user request to change %s 's password. Change password event fail"%(session['username'], username)
+            write_into_activity_log(log_line)
             return jsonify(status = "error",
                            message = "You can only change own password.")
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for change %s 's password event.\n"%( datetime.now().ctime(), username))
+        log_line = "Illegal request for change %s 's password event " %(username)
+        write_into_activity_log(log_line)
         return redirect(url_for('login'))
-
 
 
 @app.route('/change/password/<username>/handler', methods=['POST'])
@@ -504,27 +497,27 @@ def changepasswordhandler(username):
                     if request.form['new'] != "":
                         cur.execute("update userinfo set password=? where username=?",[request.form['new'], username])
                         get_db().commit()
-                        add_log = open(ACTIVITY_LOG, "a")
-                        add_log.write("%s - %s user change own password.\n"%( datetime.now().ctime(), session['username']))
+                        log_line = "%s user change own password"%(session['username'])
+                        write_into_activity_log(log_line)
                         return jsonify(status = "success")
                     else:
                         return jsonify(status = "null",
                                        message = "Please enter valid value")
                 else:
-                    add_log = open(ACTIVITY_LOG, "a")
-                    add_log.write("%s - Passwords didn't match for %s 's change password event. Change password event fail .\n"%( datetime.now().ctime(), session['username']))
+                    log_line = " Passwords didn't match for %s 's change password event. Change password event fail" %(session['username'])
+                    write_into_activity_log(log_line)
                     return jsonify(status = "error", message = "Passwords didn't match")
             else:
-                add_log = open(ACTIVITY_LOG, "a")
-                add_log.write("%s - Old password is wrong for %s 's change password event. Change password event fail .\n"%( datetime.now().ctime(), session['username']))
+                log_line = "Old password is wrong for %s 's change password event. Change password event fail"%(session['username'])
+                write_into_activity_log(log_line)
                 return jsonify(status = "error", message = "Old password is wrong")
         else:
-            add_log = open(ACTIVITY_LOG, "a")
-            add_log.write("%s - %s user request to change %s 's password. Change password event fail\n"%( datetime.now().ctime(), session['username'], username))
+            log_line = "%s user request to change %s 's password. Change password event fail" % (session['username'], username)
+            write_into_activity_log(log_line)
             return jsonify(status = "error", message = "You can only change own password.")
     else:
-        add_log = open(ACTIVITY_LOG, "a")
-        add_log.write("%s - Illegal request for change %s 's password event.\n"%( datetime.now().ctime(), username))
+        log_line = "Illegal request for change %s 's password event" % (username)
+        write_into_activity_log(log_line)
         return redirect(url_for('login'))
 
 @app.errorhandler(404)
