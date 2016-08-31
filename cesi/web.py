@@ -196,7 +196,7 @@ def showMain():
         not_connected_count = len(not_connected_node_list)
 
         return render_template('index.html',
-                                process_states = dict(Total="10", Running="1", Total="10", Running="1", Total="10", Running="1"),
+                                process_states = dict(Total="10", Running="1", Stopped="10", Backoff="1", Stopping="10", Fatal="1"),
                                 all_process_count =all_process_count,
                                 running_process_count =running_process_count,
                                 stopped_process_count =stopped_process_count,
