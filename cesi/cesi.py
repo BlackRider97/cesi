@@ -56,7 +56,7 @@ class Config:
 
     def getPort(self, default = 9002):
         port = str(self.cfg.get('cesi', 'port'))
-        return default if not port else port
+        return default if not port else int(port)
 
 class NodeConfig:
 
