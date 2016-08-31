@@ -15,6 +15,7 @@ app.secret_key= '42'
 DATABASE = Config(CONFIG_FILE).getDatabase()
 ACTIVITY_LOG = Config(CONFIG_FILE).getActivityLog()
 HOST = Config(CONFIG_FILE).getHost()
+PORT = Config(CONFIG_FILE).getPort()
 
 # Database connection
 def get_db():
@@ -532,7 +533,7 @@ def page_not_found(error):
 
 try:
     if __name__ == '__main__':
-        app.run(debug=True, use_reloader=True, host=HOST)
+        app.run(debug=True, use_reloader=True, host=HOST, port=PORT)
 except xmlrpclib.Fault as err:
     print "A fault occurred"
     print "Fault code: %d" % err.faultCode
