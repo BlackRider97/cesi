@@ -1,45 +1,43 @@
 import xmlrpclib
-import ConfigParser
+import yaml
 from datetime import datetime, timedelta
 from flask import jsonify
+import logging
+import os
 
-CONFIG_FILE = "/etc/cesi.conf"
+CONFIG_FILE = "cesi.yaml"
 
 class Config:
     
-    def __init__(self, CFILE=CONFIG_FILE):
-        self.CFILE = CFILE
-        self.cfg = ConfigParser.ConfigParser()
-        self.cfg.read(self.CFILE)
+    def __init__(self, config_file=CONFIG_FILE):
+        self.def_home_dir = os.environ.get("CESI_HOME_DIR", os.getcwd())
+        default_file = os.path.join(self.def_home_dir, "conf", config_file)
+        self.config_file = default_file
+        self.dataMap = yaml.load(open(self.config_file))
 
-        # list of all unique node's name
-        self.node_list = []
-        for name in self.cfg.sections():
-            if name[:4] == 'node':
-                self.node_list.append(name[5:])
-
-        #map of all node's based on enviroment
-        self.environment_list = []
-        for name in self.cfg.sections():
-            if name[:11] == 'environment':
-                self.environment_list.append(name[12:])
-
-        self.group_list = []
-        for name in self.cfg.sections():
-            if name[:5] == 'group':
-                self.group_list.append(name[6:])
-
+        self.cesi_config = self.dataMap.get("cesi", {})
+        self.nodes_config = self.dataMap.get("nodes", {})
         
-    def getNodeConfig(self, node_name):
-        self.node_name = "node:%s" % (node_name)
-        self.environment = self.cfg.get(self.node_name, 'environment')
-        self.username = self.cfg.get(self.node_name, 'username')
-        self.password = self.cfg.get(self.node_name, 'password')
-        self.host = self.cfg.get(self.node_name, 'host')
-        self.port = self.cfg.get(self.node_name, 'port')
-        self.node_config = NodeConfig(self.node_name, self.host, self.port, self.username, self.password, self.environment)
-        return self.node_config
+        # list of all unique node's name
+        self.node_list = self.nodes_config.keys()
 
+        #map of all node's based on enviroment (to remove)
+        self.environment_list = []
+        
+        # to remove
+        self.group_list = []
+
+    def getNodeConfig(self, node_name):
+        node_name = node_name
+        node_config = self.nodes_config.get(node_name, {})
+        host = node_config.get("host")
+        port = node_config.get("port")
+        username =  node_config.get("username")
+        password = node_config.get("password")
+        environment = node_config.get("environment", "production")
+        return NodeConfig(node_name, host, port, username, password, environment)
+
+    # to remove
     def getMemberNames(self, environment_name):
         self.environment_name = "environment:%s" % (environment_name)
         self.member_list = self.cfg.get(self.environment_name, 'members')
@@ -47,18 +45,22 @@ class Config:
         return self.member_list
 
     def getDatabase(self):
-        return str(self.cfg.get('cesi', 'database'))
+        return str(self.cesi_config.get("database", "/opt/local/cesi/database.db"))
 
     def getActivityLog(self):
-        return str(self.cfg.get('cesi', 'activity_log'))
+        return str(self.cesi_config.get("activity_log", "/opt/local/cesi/activity_log"))
 
-    def getHost(self, default = "0.0.0.0"):
-        host =  str(self.cfg.get('cesi', 'host'))
-        return default if not host else host
+    def getHost(self):
+        return str(self.cesi_config.get("host", "0.0.0.0"))
 
-    def getPort(self, default = 9002):
-        port = str(self.cfg.get('cesi', 'port'))
-        return default if not port else int(port)
+    def getPort(self):
+        return int(self.cesi_config.get("port", 9002))
+    
+    def getCoolOffTime(self):
+        return int(self.cesi_config.get("cool_off_time", 5))
+
+    def getRefreshTime(self):
+        return int(self.cesi_config.get("refresh_time", 60))
 
 class NodeConfig:
 
@@ -74,9 +76,8 @@ class NodeConfig:
 class Node:
 
     def __init__(self, node_config):
-        self.long_name = node_config.node_name
-        self.name = node_config.node_name[5:]
-        self.connection = Connection(node_config.host, node_config.port, node_config.username, node_config.password).getConnection()
+        self.name = node_config.node_name
+        self.connection = Connection(node_config).getConnection()
         self.process_list=[]
         self.process_dict2={}
         self.process_dict = self.connection.supervisor.getAllProcessInfo()
@@ -87,16 +88,25 @@ class Node:
 
 class Connection:
 
-    def __init__(self, host, port, username, password):
-        self.host = host
-        self.port = port
-        self.username = username
-        self.password = password
-        self.address = "http://%s:%s@%s:%s/RPC2" %(self.username, self.password, self.host, self.port)
+    def __init__(self, node_config):
+        self.node_name = node_config.node_name
+        self.host = node_config.host
+        self.port = node_config.port
+        self.username = node_config.username
+        self.password = node_config.password
+        if self.username and self.password:
+            self.address = "http://%s:%s@%s:%s/RPC2" % (self.username, self.password, self.host, self.port)
+        elif self.username or self.password:
+            logging.error("Only one username/password given. Please check your inputs for node_name:%s host:%s port:%s", self.node_name, self.host, self.port)
+            self.address = None
+        else:
+            logging.info("Conntecting with supervisord node without any authentication for node_name:%s host:%s port:%s", self.node_name, self.host, self.port)
+            self.address = "http://%s:%s/RPC2" % (self.host, self.port) 
 
     def getConnection(self):
-        return xmlrpclib.Server(self.address)
-        
+        if self.address:
+            return xmlrpclib.Server(self.address)
+        return None
 
 class ProcessInfo:
 

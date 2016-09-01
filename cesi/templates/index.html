@@ -80,16 +80,16 @@
                         <li>
                             <a href="#"><i class="glyphicon glyphicon-th-list"></i> Nodes<span class="fa arrow"></span></a>
                             <ul class="nav nav-second-level">
-                                {% for node_name in connected_node_list %}
-                                    <li class="ajax2" value="{{node_name}}" usertype="{{usertypecode}}">
-                                        <a> <input type="checkbox" class="ajax" value="{{ node_name  }}" disabled="true"> {{ node_name  }} </a>
-                                    </li>
-                                {% endfor %}
-                                {% for node_name in not_connected_node_list %}
-                                    <li value="{{node_name}}" >
-                                        <a><i class="glyphicon glyphicon-remove"></i> {{ node_name  }} </a>
-                                    </li>
-                                {% endfor %}
+                            {% for node_name in connected_node_list %}
+                            	<li class="ajax2" value="{{node_name}}" usertype="{{usertypecode}}">
+                     				<a> <input type="checkbox" class="ajax" value="{{ node_name  }}" disabled="true"> {{ node_name  }} </a>
+                               	</li>
+                            {% endfor %}
+                            {% for node_name in not_connected_node_list %}
+                        		<li value="{{node_name}}" >
+                  					<a><i class="glyphicon glyphicon-remove"></i> {{ node_name  }} </a>
+                             	</li>
+                            {% endfor %}
                             </ul>
                             <!-- /.nav-second-level -->
                         </li>
@@ -153,7 +153,7 @@
                                     <div class="inner">
                                         <h3>Environment</h3>
                                         {%  for key, value in environment_states.iteritems()  %}
-	       						 			<h4> {{key}}</h4>
+	       						 			<h4> {{key}} </h4>
 	       						 			{% for team in value %}
 	       						 			 	{% for key2, value2 in team.iteritems() %}
 	       						 			 		{% if key2 == "team" %}
@@ -167,7 +167,8 @@
 	       						 			 		{% endif %}
     										 	{% endfor %}
     										  	</h5>
-    										{% endfor %}  
+    										{% endfor %}
+    										<br><br>  
 	       						 		{% endfor %}
                                     </div>
                                 </div>
