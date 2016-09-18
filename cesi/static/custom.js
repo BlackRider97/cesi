@@ -906,7 +906,7 @@ var $selectnode = function(){
         });
         $newuncheckednodelist=[];
         $.ajax({
-            url: "/node/name/list",
+            url: "/nodes",
             dataType: 'json',
             async: false,
             success: function(nodenames){
@@ -1253,29 +1253,6 @@ $( document ).ready(function() {
     $(".deluser").click($showdeluserpage);
     $(".changepassword").click($changepassword);
     $(".ajax3").click($selectgroupenv);
-
-        $.ajax({
-            url: "/activitylog",
-            dataType: 'json',
-            success: function(log){
-                if(log['status'] == "success"){
-                    $(".activity-log").children('p').first().html(function(){
-                        for(var i=0; i< log['log'].length; i++){
-                            log['log'][i] = '&nbsp&nbsp'+log['log'][i]+'<br>'
-                        }
-                        return log['log']
-                    });
-                }else{
-                    noty({
-                        layout: 'bottom',
-                        text: log['message'],
-                        type: 'error',
-                        closeWith: ['click'],
-                        timeout: 5000
-                    });
-                }
-            }
-        });
 });
 
 $(window).unload(function(){

@@ -1,23 +1,6 @@
-nodes:
-  node1:
-    username: username
-    password: password
-    host: host1
-    port: port1
-    environment: production
-
-  node2:
-    username: username
-    password: password
-    host: host2
-    port: port2
-    environment: staging
-
 cesi:
   host: 0.0.0.0
   port: 9002
-  database : /path/to/cesi_database.db
-  activity_log : /path/to/activity_log
+  database : /opt/local/cesi/database.db
   cool_off_time: 5
   refresh_time: 60
-  
