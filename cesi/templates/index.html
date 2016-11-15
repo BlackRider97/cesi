@@ -47,12 +47,12 @@
                         <i class="fa fa-user fa-fw"></i>  <i class="fa fa-caret-down"></i>
                     </a>
                     <ul class="dropdown-menu dropdown-user">
-                        <li><a href="#"><i class="fa fa-user fa-fw"></i> {{username}}({{usertype}}) </a></li>
+                        <li><a href="#"><i class="fa fa-user fa-fw"></i> {{username}}({{usertype_text}}) </a></li>
                         <li><a name="{{username}}" href="#" class="changepassword"><i class="glyphicon glyphicon-wrench"></i> Change Password </a></li>
-                        {% if usertypecode == 0 %}
-                        <li class="divider"></li>
-                        <li><a href="#" class="adduser"><i class="glyphicon glyphicon-plus"></i> Add User </a></li>
-                        <li><a class="deluser"><i class="glyphicon glyphicon-trash"></i> Delete User </a></li>
+                       	{% if usertype == 0 %}
+                    		<li class="divider"></li>
+                        	<li><a href="#" class="adduser"><i class="glyphicon glyphicon-plus"></i> Add User </a></li>
+                        	<li><a class="deluser"><i class="glyphicon glyphicon-trash"></i> Delete User </a></li>
                         {% endif %}
                         <li class="divider"></li>
                         <li><a href="/logout"><i class="fa fa-sign-out fa-fw"></i> Logout</a></li>
@@ -177,12 +177,10 @@
                                 <div class="small-box bg-blue">
                                     <div class="inner">
                                         <h3>Nodes</h3>
-                                        <h4> Node Count </h4>
-                                        <h3>{{node_count}}</h3>
-                                        <h4>Connected</h4>
-                                        <h3>{{connected_count}}</h3>
-                                        <h4>Not Connected</h4>
-                                        <h3>{{not_connected_count}}</h3>
+                                        {% for key, value in nodes_states.items() %}
+                                        	<h4> {{key}} </h4>
+                                        	<h3>{{value}}</h3>
+                                        {% endfor %}
                                     </div>
                                 </div>
                             </div><!-- ./col -->

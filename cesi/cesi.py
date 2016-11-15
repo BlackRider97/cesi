@@ -15,6 +15,9 @@ class Config:
     def getDatabase(self):
         return str(self.cesi_config.get("database", "/opt/local/cesi/database.db"))
 
+    def getLoggingLevel(self):
+        return str(self.cesi_config.get("logging_level", "debug"))
+
     def getHost(self):
         return str(self.cesi_config.get("host", "0.0.0.0"))
 

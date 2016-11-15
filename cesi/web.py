@@ -6,15 +6,18 @@ import sqlite3
 import logging
 import time
 
+logger = None
 def getLogger(log_level="debug"):
-    logger = logging.getLogger('web')
+    global logger
+    my_logger = logging.getLogger('web')
     log_level_number = getattr(logging, log_level.upper())
-    logger.setLevel(log_level_number)
+    my_logger.setLevel(log_level_number)
     ch = logging.StreamHandler()
     formatter = logging.Formatter('%(asctime)s - %(levelname)s %(message)s', '%d/%m/%Y %I:%M:%S %p')
     ch.setFormatter(formatter)
-    logger.addHandler(ch)
-    return logger
+    my_logger.addHandler(ch)
+    logger = my_logger
+    return my_logger
 
 app = Flask(__name__)
 app.config.from_object(__name__)
@@ -75,17 +78,21 @@ class Connection:
         self.username = node_config.username
         self.password = node_config.password
         if self.username and self.password:
+            logger.debug("Conntecting supervisord node with authentication for node_name:%s host:%s port:%s username:%s password:%s", self.node_name, self.host, self.port, self.username, self.password)
             self.address = "http://%s:%s@%s:%s/RPC2" % (self.username, self.password, self.host, self.port)
         elif self.username or self.password:
             logger.error("Only one username/password given. Please check your inputs for node_name:%s host:%s port:%s", self.node_name, self.host, self.port)
             self.address = None
         else:
-            logger.info("Conntecting with supervisord node without any authentication for node_name:%s host:%s port:%s", self.node_name, self.host, self.port)
+            logger.debug("Conntecting with supervisord node without any authentication for node_name:%s host:%s port:%s", self.node_name, self.host, self.port)
             self.address = "http://%s:%s/RPC2" % (self.host, self.port) 
 
     def getConnection(self):
         if self.address:
-            return xmlrpclib.Server(self.address)
+            try:
+                return xmlrpclib.Server(self.address)
+            except Exception as e:
+                logger.error("Caught exception while getting connection node_name:%s host:%s port:%s Reason: %s", self.node_name, self.host, self.port, e.message)  
         return None
 
 class NodeConfig:
@@ -120,8 +127,7 @@ class ProcessInfo:
         self.spawnerr = dictionary['spawnerr']
         self.exitstatus = dictionary['exitstatus']
         self.stdout_logfile = dictionary['stdout_logfile']
-        self.stderr_logfile = dictionary['stderr_logfile']
-        self.stderr_logfile = self.stdout_logfile if not self.stderr_logfile else self.stderr_logfile
+        self.stderr_logfile = self.stdout_logfile if not dictionary.get('stderr_logfile') else dictionary['stderr_logfile']
         self.pid = dictionary['pid']
         self.seconds = self.now - self.start
         self.uptime = str(timedelta(seconds=self.seconds)) 
@@ -138,7 +144,6 @@ class ProcessInfo:
         return int(self.environment_variables.get("team", -1))
     def get_process_environment(self):
         return self.environment_variables.get("environment", NODE_ENVIRONMENTS.PRODUCTION)
-
     def get_author_name(self):
         return self.source_code_info.get("author", "unknown")
     def get_deployment_ts(self):
@@ -155,6 +160,13 @@ class Node:
         self.name = node_config.node_name
         self.host = node_config.host
         self.connection = Connection(node_config).getConnection()
+        if self.is_connected():
+            self.init_all_process_info()
+
+    def is_connected(self):
+        return self.connection is not None
+
+    def init_all_process_info(self):
         self.process_list=[]
         process_dict = self.connection.supervisor.getAllProcessInfo()
         for p in process_dict:
@@ -163,6 +175,9 @@ class Node:
             self.process_list.append(process_info)
 
     def get_process_info(self, process_group, process_name):
+        """
+            Get current state of a process running on this node
+        """
         supervisor_info = self.connection.supervisor.getProcessInfo(process_group+":"+process_name)
         hike_info = self.connection.hike.getProcessInfo(process_group, process_name)
         process_info_dict = dict(hike_info.items()+supervisor_info.items())
@@ -178,8 +193,7 @@ def get_all_teams():
         cur = get_db().cursor()
         cur.execute("select * from teams")
         for node in cur.fetchall():
-            name = node[1]
-            team  = Team(node[0], name, node[2])
+            team  = Team(node[0], node[1], node[2])
             teams.append(team)
     return teams 
 
@@ -188,8 +202,11 @@ def invalidate_teams():
     teams = []
 
 def does_user_belong_to_process(process_info, user_team_id):
+    """
+     check whether a given user is authorized to take action specified process or not 
+    """
     process_team_id = process_info.get_process_owner_team()
-    user_team_id  = int(user_team_id)
+    user_team_id  = -1 if user_team_id is None else int(user_team_id) 
     if user_team_id == -1:
         return True
     for team in get_all_teams():
@@ -198,9 +215,11 @@ def does_user_belong_to_process(process_info, user_team_id):
     return False
 
     
-# Internal function to get node information
 node_configs = {}
-def get_all_nodes_configs():
+def __get_all_nodes_configs():
+    """
+    Internal function to get node information
+    """
     global node_configs
     if not node_configs:
         cur = get_db().cursor()
@@ -215,9 +234,11 @@ nodes = {}
 last_node_update_ts = 0
 def get_all_nodes():
     global last_node_update_ts, nodes 
-    node_configs = get_all_nodes_configs()
+    node_configs = __get_all_nodes_configs()
     current_ts = int(time.time())
     if current_ts - last_node_update_ts > myconfig.getRefreshTime():
+        # If information about all processes running on specified nodes is greater than refresh time then it to refetch 
+        # all information again. This is going to result into atleast one RPC call to each node.
         last_node_update_ts = current_ts
         for node_name, node_config in node_configs.iteritems():
             node = Node(node_config)
@@ -226,13 +247,17 @@ def get_all_nodes():
 
 def invalidate_all_nodes():
     global nodes, node_configs 
-    nodes = {}
-    node_configs = {}
+    nodes, node_configs = {}, node_configs
    
 def get_node(node_name):
     return get_all_nodes().get(node_name)
     
 def get_process_info_and_node(node_name, process_name):
+    """
+        get ProcessInfo object 
+            where node_name: name of the node 
+                  process_name: is combination of supervisor group and process name
+    """
     node = get_node(node_name)
     my_process = None
     if node:
@@ -250,14 +275,14 @@ class JsonValue:
         self.node = get_node(self.node_name)
     def success(self):
         group , name = self.process_name.split(":")
-        return jsonify(status = "Success",
+        return jsonify(status = "success",
                        code = 80,
                        message = "node_name:%s process_name:%s %s event is successful" % (self.node_name, self.process_name, self.event),
                        nodename = self.node_name,
                        data = self.node.get_process_info(group, name).get_dictionary())
 
     def error(self, code, payload):
-        return jsonify(status = "Error",
+        return jsonify(status = "error",
                        code = code,
                        message = "node_name:%s process_name:%s %s event is unsuccessful" % (self.node_name, self.process_name, self.event),
                        nodename = self.node_name,
@@ -289,8 +314,7 @@ def login_control():
         if not cur.fetchall():
             session.clear()
             logger.warn("Given username:%s is not valid", username)
-            return jsonify(status = "warning",
-                           message = "Username is not  avaible ")
+            return jsonify(status = "warning", message = "User is not registered with us. Contact DevOps team for this")
         else:
             cur.execute("select * from users where username=?",(username,))
             result = cur.fetchall()[0]
@@ -298,14 +322,14 @@ def login_control():
                 session['username'] = username
                 session['logged_in'] = True
                 session['user_type'] = result[2]
+                session['user_type_text'] = get_user_type(session['user_type'])
                 session['team_id'] = result[3]
                 logger.info("Given username:%s user_type:%s team_id:%s is valid and logged in successfully", username, session['user_type'], session['team_id'])
-                return jsonify(status = "success", type = session['user_type'], type_text = get_user_type(session['user_type']), team = session['team_id'], username = username)
+                return jsonify(status = "success", type = session['user_type'], type_text = session['user_type_text'], team = session['team_id'], username = username)
             else:
                 session.clear()
                 logger.warn("Given username:%s password:%s combination is not valid", username, password)
-                return jsonify(status = "warning",
-                               message = "Invalid password")
+                return jsonify(status = "warning", message = "Invalid password")
 
 # Render login page
 @app.route('/login', methods = ['GET', 'POST'])
@@ -321,10 +345,17 @@ def logout():
 # Dashboard
 @app.route('/')
 def showMain():
-# get user type
+    # get user type
     if session.get('logged_in'):
+        node_count, connected_node = 0, 0
+        for node_name, node in get_all_nodes().iteritems():
+            connected_node += 1 if node.is_connected() else 0
+            node_count += 1
         return render_template('index.html',
-                                node_count =10,
+                                username = session['username'],
+                                usertype = session['user_type'],
+                                usertype_text = session['user_type_text'],
+                                nodes_states = {"node_count": node_count, "connected_node": connected_node, "not_connected_node": node_count - connected_node},
                                 environment_states = {},
                                 process_states = {})
     else:   
@@ -453,8 +484,7 @@ def get_node_info(node_name):
         return jsonify(status = "success", 
                        result = { node_name : [ process_info.get_dictionary() for process_info in node.process_list ] })
     else:
-        return jsonify(status = "warning",
-                           message = "No node found with given name")        
+        return jsonify(status = "error", message = "No node found with given name")        
 
 def action_on_process(node_name, process_name, event):
     if session.get('logged_in'):
@@ -462,7 +492,7 @@ def action_on_process(node_name, process_name, event):
         user_team_id = session['team_id']
         node, process = get_process_info_and_node(node_name, process_name)
         if not node or not process:
-            return jsonify(status = "error", message = "No process exits for given node name and process name")       
+            return JsonValue(process_name, node_name, event).error(0, "No process exits for given node name and process name")       
         if (user_type_code == USER_TYPES.ADMIN or user_type_code == USER_TYPES.STANDARD) or (user_type_code == USER_TYPES.TEAM_ONLY and does_user_belong_to_process(process, user_team_id)):
             try:
                 if event == "start":
@@ -481,29 +511,28 @@ def action_on_process(node_name, process_name, event):
                 return JsonValue(process_name, node_name, event).error(err.faultCode, err.faultString)
         else:
             logger.warn("%s is unauthorized user request for perform action: %s on node: %s process: %s", session['username'], event, node_name, process_name)
-            return jsonify(status = "error2",
-                           message = "You are not authorized this action" )
+            return JsonValue(process_name, node_name, event).error(0, "You are not authorized for this action")
     else:
         logger.warn("Illegal request for action:%s on node: %s process: %s by user:%s", event, node_name, process_name, session['username'])
         return redirect(url_for('login'))
 
 # Process restart
-@app.route('/node/<node_name>/process/<process_name>/restart', methods = ['GET'])
+@app.route('/node/<node_name>/<process_name>/restart', methods = ['GET'])
 def json_restart(node_name, process_name):
     return action_on_process(node_name, process_name, "restart")
 
 # Process start
-@app.route('/node/<node_name>/process/<process_name>/start', methods = ['GET'])
+@app.route('/node/<node_name>/<process_name>/start', methods = ['GET'])
 def json_start(node_name, process_name):
     return action_on_process(node_name, process_name, "start")
 
 # Process stop
-@app.route('/node/<node_name>/process/<process_name>/stop', methods = ['GET'])
+@app.route('/node/<node_name>/<process_name>/stop', methods = ['GET'])
 def json_stop(node_name, process_name):
     return action_on_process(node_name, process_name, "stop")
 
 # Show log for a process
-@app.route('/node/<node_name>/process/<process_name>/readlog', methods = ['GET'])
+@app.route('/node/<node_name>/<process_name>/readlog', methods = ['GET'])
 def readlog(node_name, process_name):
     if session.get('logged_in'):
         user_type_code = session['user_type']
@@ -700,7 +729,6 @@ def update_user_handler(old_username):
                     return jsonify(status = "warning",
                                     message ="Username already exists. Please select different username")                    
                 if password == confirmpassword:
-                    
                     cur.execute("insert into users values(?, ?, ?, ?)", (username, password, user_type_code, team, ))
                     get_db().commit()
                     logger.info("User with old username:%s new username:%s user_type_code:%s updated successfully", old_username, username, user_type_code)
@@ -728,16 +756,14 @@ def delete_user_handler(username):
             cur.execute("delete from users where username=?",(username,))
             get_db().commit()
             logger.info("User with username:%s deleted successfully", username)
-            return jsonify(status = "success",
-                                       message ="User deleted successfully")   
+            return jsonify(status = "success", message ="User deleted successfully")   
         else:
             logger.warn("username:%s user_type_code:%s is unauthorized user for request to delete user event.",session['username'],session['user_type'])  
             return jsonify(status = "error",
                            message = "Only Admin can delete a user")
     else:
         logger.warn("Please first login then try to delete a user")
-        return jsonify(status = "error",
-                       message = "First login please")
+        return jsonify(status = "error", message = "First login please")
 
 @app.errorhandler(404)
 def page_not_found(error):
@@ -745,7 +771,7 @@ def page_not_found(error):
 
 try:
     if __name__ == '__main__':
-        logger = getLogger()
+        logger = getLogger(log_level=myconfig.getLoggingLevel())
         app.run(debug=True, use_reloader=True, host=myconfig.getHost(), port=myconfig.getPort())
 except xmlrpclib.Fault as err:
     print "A fault occurred"
